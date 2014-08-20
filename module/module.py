@@ -131,12 +131,43 @@ class Graphite_Webui(BaseModule):
             url = re.sub(r'(fontSize=)[^\&]+',r'\g<1>' + newsize , url);
         return url
 
+    # Private function to replace the graph size by the specified balue.
+    def _replaceGraphSize(self, url, width, height):
+
+        # Replace width
+        if re.search('width=', url) is None:
+            url = "{url}&width={width}".format(
+                                            url = url,
+                                            width = width)
+        else:
+            url = re.sub(
+                    r'width=[^\&]+',
+                    'width={width}'.format(width=width),
+                    url)
+
+        # Replace Height
+        if re.search('height=',url) is None:
+            url = "{url}&height={height}".format(
+                                              url = url,
+                                              height = height)
+        else:
+            url = re.sub(
+                    r'height=[^\&]+',
+                    'height={height}'.format(height=height),
+                    url)
+
+        return url
+
 
 
 
     # Ask for an host or a service the graph UI that the UI should
     # give to get the graph image link and Graphite page link too.
-    def get_graph_uris(self, elt, graphstart, graphend, source = 'detail'):
+    #
+    # Parameters
+    #   width: graph width
+    #   height: graph height
+    def get_graph_uris(self, elt, graphstart, graphend, source = 'detail', width=586, height=308):
         # Ugly to hard-code such values. But where else should I put them ?
         fontsize={ 'detail': '8', 'dashboard': '18'}
         if not elt:
@@ -178,14 +209,14 @@ class Graphite_Webui(BaseModule):
                 filename = elt.check_command.get_name().split('!')[0] + '_' + elt.check_command.get_name().split('!')[1] + '.graph'
                 thefile = os.path.join(self.templates_path, source, filename)
             if not os.path.isfile(thefile):
-                thefile = os.path.join(self.templates_path, filename) 
+                thefile = os.path.join(self.templates_path, filename)
 
         if os.path.isfile(thefile):
             template_html = ''
             with open(thefile, 'r') as template_file:
                 template_html += template_file.read()
             # Read the template file, as template string python object
-           
+
             html = Template(template_html)
             # Build the dict to instantiate the template string
             values = {}
@@ -203,6 +234,7 @@ class Graphite_Webui(BaseModule):
                     v['link'] = self.uri
                     v['img_src'] = img.replace('"', "'") + "&from=" + d + "&until=" + e
                     v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
+                    v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
                     r.append(v)
             # No need to continue, we have the images already.
             return r
@@ -233,6 +265,7 @@ class Graphite_Webui(BaseModule):
                 v['link'] = self.uri
                 v['img_src'] = uri
                 v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
+                v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
                 r.append(v)
 
             return r
@@ -265,6 +298,7 @@ class Graphite_Webui(BaseModule):
                 v['link'] = self.uri
                 v['img_src'] = uri
                 v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
+                v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
                 r.append(v)
             return r
 

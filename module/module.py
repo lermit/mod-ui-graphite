@@ -36,7 +36,6 @@ from shinken.log import logger
 from string import Template
 from shinken.basemodule import BaseModule
 from datetime import datetime
-from shinken.log import logger
 from shinken.misc.perfdata import PerfDatas
 
 
@@ -45,16 +44,20 @@ properties = {
     'type': 'graphite_webui'
     }
 
+DEBUG_PREFIX = '[Graphite UI] '
 
-# called by the plugin manager
 def get_instance(plugin):
-    logger.debug("[Graphite UI]Get an GRAPHITE UI module for plugin %s" % plugin.get_name())
+    """called by the plugin manager"""
+    logger.debug("{prefix}Get an GRAPHITE UI module for plugin {name}".format(
+        prefix=DEBUG_PREFIX,
+        name=plugin.get_name()))
 
-    instance = Graphite_Webui(plugin)
+    instance = GraphiteWebui(plugin)
     return instance
 
 
-class Graphite_Webui(BaseModule):
+class GraphiteWebui(BaseModule):
+    """Main module class"""
     def __init__(self, modconf):
         BaseModule.__init__(self, modconf)
         self.multival = re.compile(r'_(\d+)$')
@@ -62,7 +65,8 @@ class Graphite_Webui(BaseModule):
         self.templates_path = getattr(modconf, 'templates_path', '/tmp')
 
         if not self.uri:
-            raise Exception('The WebUI Graphite module is missing uri parameter.')
+            raise Exception(
+                'The WebUI Graphite module is missing uri parameter.')
 
         self.uri = self.uri.strip()
         if not self.uri.endswith('/'):
@@ -74,30 +78,39 @@ class Graphite_Webui(BaseModule):
             self.uri = self.uri.replace('YOURSERVERNAME', my_name)
 
         # optional "sub-folder" in graphite to hold the data of a specific host
-        self.graphite_data_source = self.illegal_char.sub('_',
-                                    getattr(modconf, 'graphite_data_source', ''))
+        self.graphite_data_source = self.illegal_char.sub(
+            '_',
+            getattr(modconf, 'graphite_data_source', ''))
 
-    # Try to connect if we got true parameter
     def init(self):
+        """Try to connect if we got true parameter"""
         pass
 
-    # To load the webui application
     def load(self, app):
+        """To load the webui application"""
         self.app = app
 
-    # Give the link for the GRAPHITE UI, with a Name
     def get_external_ui_link(self):
+        """Give the link for the GRAPHITE UI, with a Name
+        """
         return {'label': 'Graphite', 'uri': self.uri}
 
-    # For a perf_data like /=30MB;4899;4568;1234;0  /var=50MB;4899;4568;1234;0 /toto=
-    # return ('/', '30'), ('/var', '50')
     def get_metric_and_value(self, perf_data):
+        """For a perf_data like
+          /=30MB;4899;4568;1234;0
+          /var=50MB;4899;4568;1234;0
+          /toto=
+
+          return ('/', '30'), ('/var', '50')
+        """
         res = []
         metrics = PerfDatas(perf_data)
 
         for e in metrics:
             try:
-                logger.debug("[Graphite UI] groking: %s" % str(e))
+                logger.debug("{prefix}groking: {metric}".format(
+                    prefix=DEBUG_PREFIX,
+                    metric=str(e)))
             except UnicodeEncodeError:
                 pass
 
@@ -113,89 +126,110 @@ class Graphite_Webui(BaseModule):
             if name_value[name] == '':
                 continue
             try:
-                logger.debug("[Graphite UI] Got in the end: %s, %s" % (name, e.value))
+                logger.debug("{prefix}Got in the end: {name}, {value}".format(
+                    prefix=DEBUG_PREFIX,
+                    name=name,
+                    value=e.value))
             except UnicodeEncodeError:
                 pass
             for key, value in name_value.items():
                 res.append((key, value))
         return res
 
-    # Private function to replace the fontsize uri parameter by the correct value
-    # or add it if not present.
-    def _replaceFontSize ( self, url, newsize ):
+    @staticmethod
+    def replace_font_size(url, newsize):
+        """Private function to replace the fontsize uri parameter by the correct
+        value or add it if not present."""
 
-    # Do we have fontSize in the url already, or not ?
-        if re.search('fontSize=',url) is None:
+        # Do we have fontSize in the url already, or not ?
+        if re.search('fontSize=', url) is None:
             url = url + '&fontSize=' + newsize
         else:
-            url = re.sub(r'(fontSize=)[^\&]+',r'\g<1>' + newsize , url);
+            url = re.sub(
+                r'(fontSize=)[^\&]+',
+                r'\g<1>' + newsize,
+                url)
         return url
 
-    # Private function to replace the graph size by the specified balue.
-    def _replaceGraphSize(self, url, width, height):
+    @staticmethod
+    def replace_graph_size(url, width, height):
+        """Private function to replace the graph size by the specified
+        value."""
 
         # Replace width
         if re.search('width=', url) is None:
             url = "{url}&width={width}".format(
-                                            url = url,
-                                            width = width)
+                url=url,
+                width=width)
         else:
             url = re.sub(
-                    r'width=[^\&]+',
-                    'width={width}'.format(width=width),
-                    url)
+                r'width=[^\&]+',
+                'width={width}'.format(width=width),
+                url)
 
         # Replace Height
-        if re.search('height=',url) is None:
+        if re.search('height=', url) is None:
             url = "{url}&height={height}".format(
-                                              url = url,
-                                              height = height)
+                url=url,
+                height=height)
         else:
             url = re.sub(
-                    r'height=[^\&]+',
-                    'height={height}'.format(height=height),
-                    url)
+                r'height=[^\&]+',
+                'height={height}'.format(height=height),
+                url)
 
         return url
 
+    def get_graphite_variables(self, elt):
+        """return the good graphite pre and post string regarding
+        the element type
 
-
-
-    # Ask for an host or a service the graph UI that the UI should
-    # give to get the graph image link and Graphite page link too.
-    #
-    # Parameters
-    #   width: graph width
-    #   height: graph height
-    def get_graph_uris(self, elt, graphstart, graphend, source = 'detail', width=586, height=308):
-        # Ugly to hard-code such values. But where else should I put them ?
-        fontsize={ 'detail': '8', 'dashboard': '18'}
-        if not elt:
-            return []
-
-        t = elt.__class__.my_type
-        r = []
-
-        # Hanling Graphite variables
-        data_source=""
-        graphite_pre=""
-        graphite_post=""
-        if self.graphite_data_source:
-            data_source = ".%s" % self.graphite_data_source
-        if t == 'host':
+        Return a tuple (graphite_pre,graphite_post)
+        """
+        graphite_pre = ""
+        graphite_post = ""
+        if elt.__class__.my_type == 'host':
             if "_GRAPHITE_PRE" in elt.customs:
                 graphite_pre = "%s." % self.illegal_char.sub("_", elt.customs["_GRAPHITE_PRE"])
-        elif t == 'service':
+        elif elt.__class__.my_type == 'service':
             if "_GRAPHITE_PRE" in elt.host.customs:
                 graphite_pre = "%s." % self.illegal_char.sub("_", elt.host.customs["_GRAPHITE_PRE"])
             if "_GRAPHITE_POST" in elt.customs:
                 graphite_post = ".%s" % self.illegal_char.sub("_", elt.customs["_GRAPHITE_POST"])
+        return (graphite_pre, graphite_post)
+
+
+    def get_graph_uris(self, elt, graphstart, graphend,
+                       source='detail', params={}):
+        """Ask for an host or a service the graph UI that the UI should
+        give to get the graph image link and Graphite page link too.
+
+        Parameters
+        * params : array of extra parameter :
+            * width: graph width (default 586)
+            * height: graph height (default 308)
+        """
+        # Ugly to hard-code such values. But where else should I put them ?
+        fontsize = {'detail':'8', 'dashboard':'18'}
+        height = params.get('height', 308)
+        width = params.get('width', 586)
+        if not elt:
+            return []
+
+        ret = []
+
+        # Hanling Graphite variables
+        data_source = ""
+        if self.graphite_data_source:
+            data_source = ".%s" % self.graphite_data_source
+
+        graphite_pre, graphite_post = self.get_graphite_variables(elt)
 
         # Format the start & end time (and not only the date)
-        d = datetime.fromtimestamp(graphstart)
-        d = d.strftime('%H:%M_%Y%m%d')
-        e = datetime.fromtimestamp(graphend)
-        e = e.strftime('%H:%M_%Y%m%d')
+        start_date = datetime.fromtimestamp(graphstart)
+        start_date = start_date.strftime('%H:%M_%Y%m%d')
+        end_date = datetime.fromtimestamp(graphend)
+        end_date = end_date.strftime('%H:%M_%Y%m%d')
 
         filename = elt.check_command.get_name().split('!')[0] + '.graph'
 
@@ -206,7 +240,9 @@ class Graphite_Webui(BaseModule):
         if not os.path.isfile(thefile):
             # In case of CHECK_NRPE, the check_name is in second place
             if len(elt.check_command.get_name().split('!')) > 1:
-                filename = elt.check_command.get_name().split('!')[0] + '_' + elt.check_command.get_name().split('!')[1] + '.graph'
+                filename = "{first_part}_{second_part}.graph".format(
+                    first_part=elt.check_command.get_name().split('!')[0],
+                    second_part=elt.check_command.get_name().split('!')[1])
                 thefile = os.path.join(self.templates_path, source, filename)
             if not os.path.isfile(thefile):
                 thefile = os.path.join(self.templates_path, filename)
@@ -220,28 +256,43 @@ class Graphite_Webui(BaseModule):
             html = Template(template_html)
             # Build the dict to instantiate the template string
             values = {}
-            if t == 'host':
-                values['host'] = graphite_pre + self.illegal_char.sub("_", elt.host_name) + data_source
+            if elt.__class__.my_type == 'host':
+                values['host'] = "{graphite_pre}{hostname}{datasource}".format(
+                    graphite_pre=graphite_pre,
+                    hostname=self.illegal_char.sub("_", elt.host_name),
+                    datasource=data_source)
                 values['service'] = '__HOST__'
-            if t == 'service':
-                values['host'] = graphite_pre + self.illegal_char.sub("_", elt.host.host_name) + data_source
-                values['service'] = self.illegal_char.sub("_", elt.service_description) + graphite_post
+            elif elt.__class__.my_type == 'service':
+                values['host'] = "{graphite_pre}{hostname}{datasource}".format(
+                    graphite_pre=graphite_pre,
+                    hostname=self.illegal_char.sub("_", elt.host.host_name),
+                    datasource=data_source)
+                values['service'] = "{srvdesc}{graphite_post}".format(
+                    srvdesc=self.illegal_char.sub("_", elt.service_description),
+                    graphite_post=graphite_post)
             values['uri'] = self.uri
             # Split, we may have several images.
             for img in html.substitute(values).split('\n'):
                 if not img == "":
-                    v = {}
-                    v['link'] = self.uri
-                    v['img_src'] = img.replace('"', "'") + "&from=" + d + "&until=" + e
-                    v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
-                    v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
-                    r.append(v)
+                    graph = {}
+                    graph['link'] = self.uri
+                    graph['img_src'] = "{img}&from={since}&until={to}".format(
+                        img=img.replace('"', "'"),
+                        since=start_date,
+                        to=end_date)
+                    graph['img_src'] = self.replace_font_size(
+                        graph['img_src'],
+                        fontsize[source])
+                    graph['img_src'] = self.replace_graph_size(
+                        graph['img_src'],
+                        width,
+                        height)
+                    ret.append(graph)
             # No need to continue, we have the images already.
-            return r
+            return ret
 
         # If no template is present, then the usual way
-
-        if t == 'host':
+        if elt.__class__.my_type == 'host':
             couples = self.get_metric_and_value(elt.perf_data)
 
             # If no values, we can exit now
@@ -253,7 +304,7 @@ class Graphite_Webui(BaseModule):
 
             # Send a bulk of all metrics at once
             for (metric, _) in couples:
-                uri = self.uri + 'render/?width=586&height=308&lineMode=connected&from=' + d + "&until=" + e
+                uri = self.uri + 'render/?lineMode=connected&from=' + start_date + "&until=" + end_date
                 if re.search(r'_warn|_crit', metric):
                     continue
                 target = "&target=%s%s%s.__HOST__.%s" % (graphite_pre,
@@ -261,15 +312,18 @@ class Graphite_Webui(BaseModule):
                                                          data_source,
                                                          metric)
                 uri += target + target + "?????"
-                v = {}
-                v['link'] = self.uri
-                v['img_src'] = uri
-                v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
-                v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
-                r.append(v)
-
-            return r
-        if t == 'service':
+                graph = {}
+                graph['link'] = self.uri
+                graph['img_src'] = uri
+                graph['img_src'] = self.replace_font_size(
+                    graph['img_src'],
+                    fontsize[source])
+                graph['img_src'] = self.replace_graph_size(
+                    graph['img_src'],
+                    width,
+                    height)
+                ret.append(graph)
+        elif elt.__class__.my_type == 'service':
             couples = self.get_metric_and_value(elt.perf_data)
 
             # If no values, we can exit now
@@ -282,26 +336,32 @@ class Graphite_Webui(BaseModule):
 
             # Send a bulk of all metrics at once
             for (metric, value) in couples:
-                uri = self.uri + 'render/?width=586&height=308&lineMode=connected&from=' + d + "&until=" + e
+                uri = self.uri + 'render/?lineMode=connected&from=' + start_date + "&until=" + end_date
                 if re.search(r'_warn|_crit', metric):
                     continue
                 elif value[1] == '%':
                     uri += "&yMin=0&yMax=100"
-                target = "&target=%s%s%s.%s.%s%s" % (graphite_pre,
-                                                  host_name,
-                                                  data_source,
-                                                  desc,
-                                                  metric,
-                                                  graphite_post )
+                target = "&target=%s%s%s.%s.%s%s" % (
+                    graphite_pre,
+                    host_name,
+                    data_source,
+                    desc,
+                    metric,
+                    graphite_post)
                 uri += target + target + "?????"
-                v = {}
-                v['link'] = self.uri
-                v['img_src'] = uri
-                v['img_src'] = self._replaceFontSize(v['img_src'], fontsize[source])
-                v['img_src'] = self._replaceGraphSize(v['img_src'], width, height)
-                r.append(v)
-            return r
-
+                graph = {}
+                graph['link'] = self.uri
+                graph['img_src'] = uri
+                graph['img_src'] = self.replace_font_size(
+                    graph['img_src'],
+                    fontsize[source])
+                graph['img_src'] = self.replace_graph_size(
+                    graph['img_src'],
+                    width,
+                    height)
+                ret.append(graph)
         # Oups, bad type?
-        return []
+        else:
+            return []
+        return ret
 
